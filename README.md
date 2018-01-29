@@ -1,7 +1,9 @@
-# Testing Neomodel inheritance
+# Testing (and potentially fixing) Neomodel inheritance
 
 This repo contains a brief test that demonstrates the particular way that 
 neomodel interprets inheritance.
+
+For a brief discussion of a potential fix, please see section [Potential Fix](#potentialFix)
 
 # Prerequisites
 
@@ -43,3 +45,38 @@ This behaviour works during creation and serialisation of the objects but breaks
 Specifically, when recalling objects from `specificModelClass1.someLink`, these are instantiated to their Abstract model specification
 which was `baseModelClass2`.
 
+
+<a name="potentialFix"></a>
+
+# Potential Fix
+
+A fix is proposed that is based on the availability of [inherited_labels](https://github.com/neo4j-contrib/neomodel/blob/master/neomodel/core.py#L265) 
+provided by neomodel.
+
+The idea behind the fix is simple:
+
+* *Create a lookup dictionary that maps the set of labels expected for a particular class to the class itself*
+
+1. Neomodel is based on the [Neo4j Python Driver](https://neo4j.com/developer/python/#neo4j-python-driver) and when running cypher queries 
+directly on the database (via [cypher_query](https://github.com/neo4j-contrib/neomodel/blob/master/neomodel/util.py#L87) for example) it 
+returns a simple [Node](https://github.com/neo4j/neo4j-python-driver/blob/1.6/neo4j/v1/types.py#L250). That `Node` contains a `set` of 
+all labels associated with the node.
+
+2. Every [neomodel::StructuredNode](https://github.com/neo4j-contrib/neomodel/blob/master/neomodel/core.py#L178) has 
+   an [inflate](https://github.com/neo4j-contrib/neomodel/blob/master/neomodel/core.py#L491) method which accepts 
+   a [Node](https://github.com/neo4j/neo4j-python-driver/blob/1.6/neo4j/v1/types.py#L250) and returns a specialisation 
+   of [neomodel::StructuredNode](https://github.com/neo4j-contrib/neomodel/blob/master/neomodel/core.py#L178).
+   
+3. To automate this, two functions are proposed: `createLookupDict` and `node2Instance`
+    * `createLookupDict` accepts a list of class definitions which are descendands of `StructuredNode` and produces a dictionary that maps a **frozenset** of labels to the class definition
+    * `node2Instance` uses the lookup table from `createLookupDict` to return a model class.
+    * The key thing here is to use a [frozenset](https://docs.python.org/3/library/stdtypes.html#frozenset) data type which is imutable and can be hashed to be used as a key in the mapping.
+       
+This however is not a complete solution because: 
+
+1. It is not part of StructuredNode or StructredRel
+2. It does not perform a check against a particular class / type
+
+Number 2 is easily solved by *checking that the labels of the class 
+at the end of a relationship are a subset of the labels of the 
+object that is about to be instantiated from the db*.
